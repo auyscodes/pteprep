@@ -1,0 +1,11 @@
+name = "pteprep-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+
+[[r2_buckets]]
+binding = "PTEPREP_MEDIA"
+bucket_name = "pteprep-media"

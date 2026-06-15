@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Secrets (CRITICAL)
+.dev.vars
+.env
+.sandcastle/.env
+apps/worker/.dev.vars
+
+# Build outputs
+dist/
+build/
+
+# Cloudflare Worker local cache
+.wrangler/
+
+# OS files
+.DS_Store
+Thumbs.db
