@@ -5,12 +5,12 @@ PTE Academic exam practice platform. Monorepo with React web app, Cloudflare Wor
 ## Language
 
 **Question**:
-Core domain entity representing a PTE Academic exam item, one of 22 types
+Core domain entity representing a PTE Academic exam item, one of 21 types
 (read*aloud, repeat_sentence, retell_lecture, describe_image, respond_situation,
 write_essay, summarize_written, summarize_discussion, reading_fib_dragdrop,
 reading_fib_dropdown, reorder_paragraphs, reading_mcs, reading_mcm,
 highlight_incorrect, highlight_summary, listening_mcs, listening_mcm,
-listening_fib, select_missing_word, write_from_dictation, summarize_spoken_text,
+listening_fib, select_missing_word, write_from_dictation,
 answer_short). Stored in the `questions` table with a `question_type` enum.
 \_Avoid*: Item, task, exercise
 
