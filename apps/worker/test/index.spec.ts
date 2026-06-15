@@ -1,5 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 import worker from '../src/index';
 import type { Env } from '../src/types';
 
@@ -26,12 +26,10 @@ describe('Hello World worker', () => {
 
 describe('Worker bindings', () => {
 	it('Env type includes SCORING_QUEUE', () => {
-		const _assert: Env['SCORING_QUEUE'] extends Queue ? true : never = true;
-		expect(true).toBe(true);
+		expectTypeOf<Env['SCORING_QUEUE']>().toEqualTypeOf<Queue>();
 	});
 
 	it('Env type includes RATE_LIMITER', () => {
-		const _assert: Env['RATE_LIMITER'] extends RateLimit ? true : never = true;
-		expect(true).toBe(true);
+		expectTypeOf<Env['RATE_LIMITER']>().toEqualTypeOf<RateLimit>();
 	});
 });
