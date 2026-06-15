@@ -8,4 +8,6 @@ export interface Env {
   ADMIN_API_KEY:             string
   ENVIRONMENT:               string
   PTEPREP_MEDIA:             R2Bucket
+  SCORING_QUEUE:             Queue
+  RATE_LIMITER:              RateLimit
 }
