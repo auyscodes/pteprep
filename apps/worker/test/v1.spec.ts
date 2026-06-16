@@ -90,8 +90,9 @@ const sampleQuestion = {
 
 describe('/v1 routes', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  vi.clearAllMocks();
+  mockSingle.mockReset();
+});
 
   // ── GET /v1/questions ──────────────────────────────────────────
   describe('GET /v1/questions', () => {
