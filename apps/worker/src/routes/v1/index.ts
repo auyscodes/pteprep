@@ -241,7 +241,7 @@ v1.get('/attempts/:id', async (c) => {
   const { data: attempt, error: lookupErr } = await supabase
     .from('practice_attempts')
     .select(
-      'id, session_id, question_id, user_id, question_type, status, recording_url, duration_ms, score, error_detail, created_at, updated_at',
+      'id, session_id, question_id, user_id, status, recording_url, duration_ms, score, error_detail, created_at, updated_at',
     )
     .eq('id', attemptId)
     .single();
