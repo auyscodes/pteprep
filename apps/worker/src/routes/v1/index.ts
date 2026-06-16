@@ -119,7 +119,6 @@ v1.post('/sessions/:id/attempts', async (c) => {
   const sessionId = c.req.param('id');
   const supabase = getSupabase(c.env);
 
-  // Validate session exists and belongs to user
   const { data: session, error: sessionErr } = await supabase
     .from('practice_sessions')
     .select('id, user_id, ended_at')
@@ -138,7 +137,6 @@ v1.post('/sessions/:id/attempts', async (c) => {
     return c.json({ error: 'Session has ended' }, 400);
   }
 
-  // Parse and validate request body
   let body: { question_id?: string };
   try {
     body = await c.req.json<{ question_id?: string }>();
@@ -150,7 +148,6 @@ v1.post('/sessions/:id/attempts', async (c) => {
     return c.json({ error: 'question_id is required' }, 400);
   }
 
-  // Validate question exists and is read_aloud
   const { data: question, error: questionErr } = await supabase
     .from('questions')
     .select('id, question_type')
@@ -164,7 +161,6 @@ v1.post('/sessions/:id/attempts', async (c) => {
     return c.json({ error: 'Invalid question' }, 400);
   }
 
-  // Create the attempt
   const { data: attempt, error: insertErr } = await supabase
     .from('practice_attempts')
     .insert({
@@ -194,7 +190,6 @@ v1.post('/attempts/:id/submit', async (c) => {
   const attemptId = c.req.param('id');
   const supabase = getSupabase(c.env);
 
-  // Look up attempt
   const { data: attempt, error: lookupErr } = await supabase
     .from('practice_attempts')
     .select('id, session_id, question_id, user_id, question_type, status, recording_url')
@@ -213,7 +208,6 @@ v1.post('/attempts/:id/submit', async (c) => {
     return c.json({ error: 'Recording not uploaded' }, 400);
   }
 
-  // Update status to uploaded
   const { data: updated, error: updateErr } = await supabase
     .from('practice_attempts')
     .update({ status: 'uploaded' })
@@ -225,7 +219,6 @@ v1.post('/attempts/:id/submit', async (c) => {
     return c.json({ error: 'Failed to submit attempt' }, 500);
   }
 
-  // Enqueue scoring message
   await c.env.SCORING_QUEUE.send({
     attemptId,
     recordingUrl: attempt.recording_url,
