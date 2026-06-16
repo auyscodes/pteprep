@@ -28,6 +28,12 @@ interface Score {
   content: number;
 }
 
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+};
+
 export function ReadAloudPlayer({
   question,
 }: ReadAloudPlayerProps): React.ReactNode {
@@ -36,6 +42,7 @@ export function ReadAloudPlayer({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [score, setScore] = useState<Score | null>(null);
+  const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
 
   const sessionIdRef = useRef<string | null>(null);
   const attemptIdRef = useRef<string | null>(null);
@@ -134,9 +141,7 @@ export function ReadAloudPlayer({
       const message =
         err instanceof Error ? err.message : "Failed to create session";
       setError(message);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      clearTimer();
     }
   }, [question.id, clearTimer]);
 
@@ -153,7 +158,7 @@ export function ReadAloudPlayer({
       setUploadProgress(0);
 
       try {
-        const { uploadUrl, key: _key } = await apiFetch<{
+        const { uploadUrl } = await apiFetch<{
           uploadUrl: string;
           key: string;
         }>("/v1/recordings/upload-url", {
@@ -205,8 +210,6 @@ export function ReadAloudPlayer({
     }
   }, [pollAttempt]);
 
-  const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
-
   useEffect(() => {
     if (navigator.mediaDevices?.getUserMedia) {
       navigator.mediaDevices
@@ -223,11 +226,15 @@ export function ReadAloudPlayer({
     }
   }, []);
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
+  useEffect(() => {
+    return () => {
+      clearTimer();
+      clearPolling();
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, [clearTimer, clearPolling]);
 
   if (micAvailable === false) {
     return (
