@@ -121,6 +121,33 @@ The reviewer **must** check every diff against each item below and flag any viol
   that is not available in the sandbox. Update `src/types.ts` manually
   when adding new bindings.
 - Never run `wrangler deploy` or `wrangler dev` inside the sandbox.
+- When adding new imports in apps/worker, always install the package:
+  `npm install <package> --workspace=apps/worker`
+  The jose package is already installed for JWT verification.
+- When adding new imports in apps/web, always install the package:
+  `npm install <package> --workspace=apps/web`
+
+## Vitest in Docker Sandbox
+When running tests inside the sandbox, use these Vitest settings for reliability:
+
+- `pool: 'forks'` with `singleFork: true`
+- `testTimeout: 30000` and `hookTimeout: 30000`
+- Avoid `pool: 'threads'` — it can hang in Docker on Windows
+
+If tests hang, try running with `--pool=forks --poolOptions.forks.singleFork=true`
+
+## Test Runner Sandbox Constraint
+@testing-library/user-event can hang for many minutes per test in this 
+Docker sandbox due to its internal setTimeout-based interaction delays 
+combined with constrained CPU scheduling. For component tests in 
+apps/web, use @testing-library/react's fireEvent instead of user-event 
+unless testing genuinely timing-sensitive behavior (debounce, etc). 
+fireEvent is synchronous and has no timer dependency, avoiding the hang.
+Example: fireEvent.click(button) instead of 
+await userEvent.setup().click(button)
+If a test file already uses user-event and hangs, convert it to fireEvent 
+before debugging further — do not spend iterations on mock-reset 
+experimentation, this is a known sandbox constraint.
 
 ## Reviewer Checklist
 
