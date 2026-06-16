@@ -6,6 +6,10 @@ interface SessionBarProps {
   attemptCount?: number;
 }
 
+function pluraliseAttempts(n: number): string {
+  return n === 1 ? "1 attempt" : `${n} attempts`;
+}
+
 export function SessionBar({
   attemptCount = 0,
 }: SessionBarProps): React.ReactNode {
@@ -57,7 +61,7 @@ export function SessionBar({
       {session && !session.ended_at ? (
         <div>
           <p data-testid="session-status">
-            Session active &mdash; {attemptCount} attempt{attemptCount !== 1 ? "s" : ""}
+            Session active &mdash; {pluraliseAttempts(attemptCount)}
           </p>
           <button
             type="button"

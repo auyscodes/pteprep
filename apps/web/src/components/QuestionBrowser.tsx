@@ -9,6 +9,12 @@ interface QuestionsResponse {
   limit: number;
 }
 
+function difficultyLabel(d: number): string {
+  if (d <= 3) return "Easy";
+  if (d <= 6) return "Medium";
+  return "Hard";
+}
+
 export function QuestionBrowser(): React.ReactNode {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,19 +41,13 @@ export function QuestionBrowser(): React.ReactNode {
   }
 
   if (questions.length === 0) {
-    return <p>No questions available</p>;
+    return <p role="status">No questions available</p>;
   }
-
-  const difficultyLabel = (d: number): string => {
-    if (d <= 3) return "Easy";
-    if (d <= 6) return "Medium";
-    return "Hard";
-  };
 
   return (
     <section aria-label="Question Browser">
       <h2>Read Aloud Questions</h2>
-      <ul data-testid="question-list" role="list">
+      <ul data-testid="question-list">
         {questions.map((q) => (
           <li key={q.id} data-testid="question-card">
             <h3>{q.topic_title}</h3>
