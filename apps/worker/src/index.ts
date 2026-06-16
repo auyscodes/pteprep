@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import admin from './routes/admin';
 import media from './routes/media';
+import v1 from './routes/v1';
 import { Env } from './types';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -17,6 +18,7 @@ app.use(
 
 app.route('/admin', admin);
 app.route('/media', media);
+app.route('/v1', v1);
 
 app.get('/', (c) => c.json({ service: 'pteprep-api', status: 'running' }));
 
