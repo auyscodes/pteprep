@@ -20,8 +20,6 @@ const mockOrder = vi.fn().mockReturnThis();
 const mockRange = vi.fn().mockReturnThis();
 const mockSingle = vi.fn();
 const mockInsert = vi.fn().mockReturnThis();
-const mockUpdate = vi.fn().mockReturnThis();
-const mockIs = vi.fn().mockReturnThis();
 
 const mockFrom = vi.fn(() => ({
   select: mockSelect,
@@ -29,10 +27,8 @@ const mockFrom = vi.fn(() => ({
   or: mockOr,
   order: mockOrder,
   range: mockRange,
-  single: mockSingle,
   insert: mockInsert,
-  update: mockUpdate,
-  is: mockIs,
+  single: mockSingle,
 }));
 
 vi.mock('../src/lib/supabase', () => ({
@@ -272,133 +268,91 @@ describe('/v1 routes', () => {
     });
   });
 
-  // ── POST /v1/sessions ──────────────────────────────────────────
-  describe('POST /v1/sessions', () => {
+  // ── POST /v1/sessions/:id/attempts ──────────────────────────────
+  describe('POST /v1/sessions/:id/attempts', () => {
     const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const questionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const attemptId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const userId = 'user-123';
 
-    it('returns 401 when no JWT is provided', async () => {
-      const request = new IncomingRequest('http://example.com/v1/sessions', {
-        method: 'POST',
-      });
-      const ctx = createExecutionContext();
-      const response = await worker.fetch(request, env, ctx);
-      await waitOnExecutionContext(ctx);
-
-      expect(response.status).toBe(401);
-    });
-
-    it('creates a session and returns 201 with id, user_id, created_at', async () => {
+    it('creates an attempt and returns 201', async () => {
       const { verifySupabaseJwt } = await import('../src/lib/jwks');
-      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        'user-123',
-      );
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
 
-      mockSingle.mockResolvedValueOnce({
-        data: {
-          id: sessionId,
-          user_id: 'user-123',
-          created_at: '2026-06-15T00:00:00Z',
+      mockSingle
+        .mockResolvedValueOnce({
+          data: { id: sessionId, user_id: userId, ended_at: null },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: { ...sampleQuestion, id: questionId },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: { id: attemptId, session_id: sessionId, question_id: questionId, status: 'pending' },
+          error: null,
+        });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ question_id: questionId }),
         },
-        error: null,
-      });
-
-      const request = new IncomingRequest('http://example.com/v1/sessions', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer valid.jwt.token' },
-      });
+      );
       const ctx = createExecutionContext();
       const response = await worker.fetch(request, env, ctx);
       await waitOnExecutionContext(ctx);
 
       expect(response.status).toBe(201);
       const body = (await response.json()) as Record<string, unknown>;
-      expect(body.id).toBe(sessionId);
-      expect(body.user_id).toBe('user-123');
-      expect(body.created_at).toBe('2026-06-15T00:00:00Z');
-
-      expect(mockInsert).toHaveBeenCalledWith({ user_id: 'user-123' });
+      expect(body.id).toBe(attemptId);
+      expect(body.session_id).toBe(sessionId);
+      expect(body.question_id).toBe(questionId);
+      expect(body.status).toBe('pending');
+      expect(body).not.toHaveProperty('user_id');
     });
 
-    it('returns 401 when JWT is invalid', async () => {
-      const { verifySupabaseJwt } = await import('../src/lib/jwks');
-      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        null,
-      );
-
-      const request = new IncomingRequest('http://example.com/v1/sessions', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer invalid.jwt' },
-      });
-      const ctx = createExecutionContext();
-      const response = await worker.fetch(request, env, ctx);
-      await waitOnExecutionContext(ctx);
-
-      expect(response.status).toBe(401);
-    });
-  });
-
-  // ── PATCH /v1/sessions/:id/end ────────────────────────────────
-  describe('PATCH /v1/sessions/:id/end', () => {
-    const sessionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-
-    it('returns 401 when no JWT is provided', async () => {
+    it('returns 401 when no valid JWT is provided', async () => {
       const request = new IncomingRequest(
-        `http://example.com/v1/sessions/${sessionId}/end`,
-        { method: 'PATCH' },
-      );
-      const ctx = createExecutionContext();
-      const response = await worker.fetch(request, env, ctx);
-      await waitOnExecutionContext(ctx);
-
-      expect(response.status).toBe(401);
-    });
-
-    it('returns 404 for non-existent session', async () => {
-      const { verifySupabaseJwt } = await import('../src/lib/jwks');
-      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        'user-123',
-      );
-
-      mockSingle.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'No rows found' },
-      });
-
-      const request = new IncomingRequest(
-        `http://example.com/v1/sessions/${sessionId}/end`,
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
         {
-          method: 'PATCH',
-          headers: { Authorization: 'Bearer valid.jwt.token' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question_id: questionId }),
         },
       );
       const ctx = createExecutionContext();
       const response = await worker.fetch(request, env, ctx);
       await waitOnExecutionContext(ctx);
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(401);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Authentication required');
     });
 
     it('returns 403 when session belongs to a different user', async () => {
       const { verifySupabaseJwt } = await import('../src/lib/jwks');
-      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        'user-456',
-      );
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
 
       mockSingle.mockResolvedValueOnce({
-        data: {
-          id: sessionId,
-          user_id: 'other-user',
-          created_at: '2026-06-15T00:00:00Z',
-          ended_at: null,
-        },
+        data: { id: sessionId, user_id: 'other-user', ended_at: null },
         error: null,
       });
 
       const request = new IncomingRequest(
-        `http://example.com/v1/sessions/${sessionId}/end`,
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
         {
-          method: 'PATCH',
-          headers: { Authorization: 'Bearer valid.jwt.token' },
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ question_id: questionId }),
         },
       );
       const ctx = createExecutionContext();
@@ -406,90 +360,163 @@ describe('/v1 routes', () => {
       await waitOnExecutionContext(ctx);
 
       expect(response.status).toBe(403);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Forbidden');
     });
 
-    it('ends a session and returns updated session', async () => {
+    it('returns 400 when question_id is missing from request body', async () => {
       const { verifySupabaseJwt } = await import('../src/lib/jwks');
-      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        'user-123',
-      );
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
 
-      // First call: fetch the session
       mockSingle.mockResolvedValueOnce({
-        data: {
-          id: sessionId,
-          user_id: 'user-123',
-          created_at: '2026-06-15T00:00:00Z',
-          ended_at: null,
-        },
-        error: null,
-      });
-
-      // Second call: update the session
-      mockSingle.mockResolvedValueOnce({
-        data: {
-          id: sessionId,
-          user_id: 'user-123',
-          created_at: '2026-06-15T00:00:00Z',
-          ended_at: '2026-06-15T01:00:00Z',
-        },
+        data: { id: sessionId, user_id: userId, ended_at: null },
         error: null,
       });
 
       const request = new IncomingRequest(
-        `http://example.com/v1/sessions/${sessionId}/end`,
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
         {
-          method: 'PATCH',
-          headers: { Authorization: 'Bearer valid.jwt.token' },
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
         },
       );
       const ctx = createExecutionContext();
       const response = await worker.fetch(request, env, ctx);
       await waitOnExecutionContext(ctx);
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(400);
       const body = (await response.json()) as Record<string, unknown>;
-      expect(body.id).toBe(sessionId);
-      expect(body.ended_at).toBe('2026-06-15T01:00:00Z');
-
-      expect(mockUpdate).toHaveBeenCalled();
-      expect(mockEq).toHaveBeenCalledWith('id', sessionId);
+      expect(body.error).toBe('question_id is required');
     });
 
-    it('is idempotent — returns already-ended session without updating', async () => {
+    it('returns 400 when question does not exist', async () => {
       const { verifySupabaseJwt } = await import('../src/lib/jwks');
-      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-        'user-123',
-      );
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
 
-      mockSingle.mockResolvedValueOnce({
-        data: {
-          id: sessionId,
-          user_id: 'user-123',
-          created_at: '2026-06-15T00:00:00Z',
-          ended_at: '2026-06-15T01:00:00Z',
-        },
-        error: null,
-      });
+      mockSingle
+        .mockResolvedValueOnce({
+          data: { id: sessionId, user_id: userId, ended_at: null },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { message: 'No rows found' },
+        });
 
       const request = new IncomingRequest(
-        `http://example.com/v1/sessions/${sessionId}/end`,
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
         {
-          method: 'PATCH',
-          headers: { Authorization: 'Bearer valid.jwt.token' },
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ question_id: questionId }),
         },
       );
       const ctx = createExecutionContext();
       const response = await worker.fetch(request, env, ctx);
       await waitOnExecutionContext(ctx);
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(400);
       const body = (await response.json()) as Record<string, unknown>;
-      expect(body.id).toBe(sessionId);
-      expect(body.ended_at).toBe('2026-06-15T01:00:00Z');
+      expect(body.error).toBe('Invalid question');
+    });
 
-      // Update should not have been called
-      expect(mockUpdate).not.toHaveBeenCalled();
+    it('returns 400 when question is not type read_aloud', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle
+        .mockResolvedValueOnce({
+          data: { id: sessionId, user_id: userId, ended_at: null },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: null,
+          error: { message: 'No rows found' },
+        });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ question_id: questionId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Invalid question');
+    });
+
+    it('returns 400 when session is already ended', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { id: sessionId, user_id: userId, ended_at: '2026-06-01T00:00:00Z' },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ question_id: questionId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Session has ended');
+    });
+
+    it('returns 404 when session does not exist', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'No rows found' },
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/attempts`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ question_id: questionId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Session not found');
     });
   });
 
