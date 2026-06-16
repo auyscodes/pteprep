@@ -229,6 +229,57 @@ v1.post('/attempts/:id/submit', async (c) => {
   return c.json(updated);
 });
 
+// GET /v1/attempts/:id — full attempt detail with optional signed recording URL
+v1.get('/attempts/:id', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const attemptId = c.req.param('id');
+  const supabase = getSupabase(c.env);
+  const { data: attempt, error: lookupErr } = await supabase
+    .from('practice_attempts')
+    .select(
+      'id, session_id, question_id, user_id, question_type, status, recording_url, duration_ms, score, error_detail, created_at, updated_at',
+    )
+    .eq('id', attemptId)
+    .single();
+
+  if (lookupErr || !attempt) {
+    return c.json({ error: 'Attempt not found' }, 404);
+  }
+
+  if (attempt.user_id !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const result: Record<string, unknown> = {
+    id: attempt.id,
+    session_id: attempt.session_id,
+    question_id: attempt.question_id,
+    status: attempt.status,
+    duration_ms: attempt.duration_ms,
+    score: attempt.score,
+    created_at: attempt.created_at,
+    updated_at: attempt.updated_at,
+  };
+
+  if (attempt.recording_url) {
+    try {
+      result.recording_url = await getSignedMediaUrl(
+        c.env,
+        attempt.recording_url,
+        3600,
+      );
+    } catch {
+      result.recording_url = attempt.recording_url;
+    }
+  }
+
+  return c.json(result);
+});
+
 // POST /v1/recordings/upload-url — generate R2 upload Signed URL
 v1.post('/recordings/upload-url', async (c) => {
   const userId = c.get('userId');

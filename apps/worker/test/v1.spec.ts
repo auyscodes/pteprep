@@ -840,6 +840,181 @@ describe('/v1 routes', () => {
     });
   });
 
+  // ── GET /v1/attempts/:id ────────────────────────────────────────
+  describe('GET /v1/attempts/:id', () => {
+    const attemptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const questionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const userId = 'user-123';
+
+    const attemptFixture = {
+      id: attemptId,
+      session_id: sessionId,
+      question_id: questionId,
+      user_id: userId,
+      question_type: 'read_aloud',
+      status: 'completed',
+      recording_url: 'recordings/user-123/dddd.webm',
+      duration_ms: 45_000,
+      score: { fluency: 75, pronunciation: 72, content: 80 },
+      error_detail: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    it('returns full attempt detail with signed recording URL', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: attemptFixture,
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}`,
+        {
+          headers: { 'Authorization': 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.id).toBe(attemptId);
+      expect(body.session_id).toBe(sessionId);
+      expect(body.question_id).toBe(questionId);
+      expect(body.status).toBe('completed');
+      expect(body.recording_url).toBe('https://signed.example.com/media/test.webm');
+      expect(body.duration_ms).toBe(45_000);
+      expect(body.score).toEqual({ fluency: 75, pronunciation: 72, content: 80 });
+      expect(body.created_at).toBe('2026-01-01T00:00:00Z');
+      expect(body.updated_at).toBe('2026-01-01T00:00:00Z');
+      expect(body).not.toHaveProperty('error_detail');
+      expect(body).not.toHaveProperty('user_id');
+      expect(body).not.toHaveProperty('question_type');
+
+      const { getSignedMediaUrl } = await import('../src/lib/r2');
+      expect(getSignedMediaUrl).toHaveBeenCalledWith(
+        env,
+        'recordings/user-123/dddd.webm',
+        3600,
+      );
+    });
+
+    it('omits recording_url from response when null on the row', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { ...attemptFixture, recording_url: null },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}`,
+        {
+          headers: { 'Authorization': 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body).not.toHaveProperty('recording_url');
+      expect(body.id).toBe(attemptId);
+    });
+
+    it('returns 401 when no valid JWT is provided', async () => {
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}`,
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Authentication required');
+    });
+
+    it('returns 403 when attempt belongs to a different user', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { ...attemptFixture, user_id: 'other-user' },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}`,
+        {
+          headers: { 'Authorization': 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Forbidden');
+    });
+
+    it('returns 404 when attempt does not exist', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'No rows found' },
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}`,
+        {
+          headers: { 'Authorization': 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Attempt not found');
+    });
+
+    it('never exposes error_detail in response', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { ...attemptFixture, error_detail: 'sensitive debug info' },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}`,
+        {
+          headers: { 'Authorization': 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body).not.toHaveProperty('error_detail');
+    });
+  });
+
   // ── Queue handler ───────────────────────────────────────────────
   describe('queue handler', () => {
     const attemptId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
