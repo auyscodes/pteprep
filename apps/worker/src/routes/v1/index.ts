@@ -109,4 +109,79 @@ v1.get('/questions/:id', async (c) => {
   return c.json(question);
 });
 
+// POST /v1/sessions/:id/attempts — create a new practice attempt
+v1.post('/sessions/:id/attempts', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const sessionId = c.req.param('id');
+  const supabase = getSupabase(c.env);
+
+  // Validate session exists and belongs to user
+  const { data: session, error: sessionErr } = await supabase
+    .from('practice_sessions')
+    .select('id, user_id, ended_at')
+    .eq('id', sessionId)
+    .single();
+
+  if (sessionErr || !session) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  if (session.user_id !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  if (session.ended_at) {
+    return c.json({ error: 'Session has ended' }, 400);
+  }
+
+  // Parse and validate request body
+  let body: { question_id?: string };
+  try {
+    body = await c.req.json<{ question_id?: string }>();
+  } catch {
+    return c.json({ error: 'question_id is required' }, 400);
+  }
+
+  if (!body.question_id) {
+    return c.json({ error: 'question_id is required' }, 400);
+  }
+
+  // Validate question exists and is read_aloud
+  const { data: question, error: questionErr } = await supabase
+    .from('questions')
+    .select('id, question_type')
+    .eq('id', body.question_id)
+    .eq('question_type', 'read_aloud')
+    .eq('is_public', true)
+    .or(DEFENCE_FILTER)
+    .single();
+
+  if (questionErr || !question) {
+    return c.json({ error: 'Invalid question' }, 400);
+  }
+
+  // Create the attempt
+  const { data: attempt, error: insertErr } = await supabase
+    .from('practice_attempts')
+    .insert({
+      session_id: sessionId,
+      question_id: body.question_id,
+      user_id: userId,
+      question_type: 'read_aloud',
+      status: 'pending',
+    })
+    .select('id, session_id, question_id, status')
+    .single();
+
+  if (insertErr || !attempt) {
+    return c.json({ error: 'Failed to create attempt' }, 500);
+  }
+
+  return c.json(attempt, 201);
+});
+
 export default v1;
