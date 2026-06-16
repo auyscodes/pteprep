@@ -109,4 +109,68 @@ v1.get('/questions/:id', async (c) => {
   return c.json(question);
 });
 
+// POST /v1/sessions — create a new practice session (authenticated)
+v1.post('/sessions', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const supabase = getSupabase(c.env);
+  const { data, error } = await supabase
+    .from('practice_sessions')
+    .insert({ user_id: userId })
+    .select('id, user_id, created_at')
+    .single();
+
+  if (error || !data) {
+    return c.json({ error: 'Failed to create session' }, 500);
+  }
+
+  return c.json(data, 201);
+});
+
+// PATCH /v1/sessions/:id/end — end a practice session (authenticated)
+v1.patch('/sessions/:id/end', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const sessionId = c.req.param('id');
+  const supabase = getSupabase(c.env);
+
+  const { data: session, error: fetchError } = await supabase
+    .from('practice_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (fetchError || !session) {
+    return c.json({ error: 'Session not found' }, 404);
+  }
+
+  if ((session as Record<string, unknown>).user_id !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  // Idempotent: no-op if already ended
+  if ((session as Record<string, unknown>).ended_at) {
+    return c.json(session);
+  }
+
+  const { data, error: updateError } = await supabase
+    .from('practice_sessions')
+    .update({ ended_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .select('id, user_id, created_at, ended_at')
+    .single();
+
+  if (updateError || !data) {
+    return c.json({ error: 'Failed to end session' }, 500);
+  }
+
+  return c.json(data);
+});
+
 export default v1;

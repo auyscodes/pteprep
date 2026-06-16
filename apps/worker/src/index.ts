@@ -11,7 +11,7 @@ app.use(
 	'*',
 	cors({
 		origin: ['http://localhost:5173', 'https://pteprep.com.np'],
-		allowMethods: ['GET', 'POST', 'PUT', 'DELETE'],
+		allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 		allowHeaders: ['Content-Type', 'X-Admin-Key', 'Authorization'],
 	}),
 );

@@ -19,6 +19,9 @@ const mockOr = vi.fn().mockReturnThis();
 const mockOrder = vi.fn().mockReturnThis();
 const mockRange = vi.fn().mockReturnThis();
 const mockSingle = vi.fn();
+const mockInsert = vi.fn().mockReturnThis();
+const mockUpdate = vi.fn().mockReturnThis();
+const mockIs = vi.fn().mockReturnThis();
 
 const mockFrom = vi.fn(() => ({
   select: mockSelect,
@@ -27,6 +30,9 @@ const mockFrom = vi.fn(() => ({
   order: mockOrder,
   range: mockRange,
   single: mockSingle,
+  insert: mockInsert,
+  update: mockUpdate,
+  is: mockIs,
 }));
 
 vi.mock('../src/lib/supabase', () => ({
@@ -263,6 +269,227 @@ describe('/v1 routes', () => {
 
       const body = (await response.json()) as Record<string, unknown>;
       expect(body).not.toHaveProperty('source_ref');
+    });
+  });
+
+  // ── POST /v1/sessions ──────────────────────────────────────────
+  describe('POST /v1/sessions', () => {
+    const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    it('returns 401 when no JWT is provided', async () => {
+      const request = new IncomingRequest('http://example.com/v1/sessions', {
+        method: 'POST',
+      });
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('creates a session and returns 201 with id, user_id, created_at', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        'user-123',
+      );
+
+      mockSingle.mockResolvedValueOnce({
+        data: {
+          id: sessionId,
+          user_id: 'user-123',
+          created_at: '2026-06-15T00:00:00Z',
+        },
+        error: null,
+      });
+
+      const request = new IncomingRequest('http://example.com/v1/sessions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer valid.jwt.token' },
+      });
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.id).toBe(sessionId);
+      expect(body.user_id).toBe('user-123');
+      expect(body.created_at).toBe('2026-06-15T00:00:00Z');
+
+      expect(mockInsert).toHaveBeenCalledWith({ user_id: 'user-123' });
+    });
+
+    it('returns 401 when JWT is invalid', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        null,
+      );
+
+      const request = new IncomingRequest('http://example.com/v1/sessions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer invalid.jwt' },
+      });
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  // ── PATCH /v1/sessions/:id/end ────────────────────────────────
+  describe('PATCH /v1/sessions/:id/end', () => {
+    const sessionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    it('returns 401 when no JWT is provided', async () => {
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/end`,
+        { method: 'PATCH' },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('returns 404 for non-existent session', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        'user-123',
+      );
+
+      mockSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'No rows found' },
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/end`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('returns 403 when session belongs to a different user', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        'user-456',
+      );
+
+      mockSingle.mockResolvedValueOnce({
+        data: {
+          id: sessionId,
+          user_id: 'other-user',
+          created_at: '2026-06-15T00:00:00Z',
+          ended_at: null,
+        },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/end`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('ends a session and returns updated session', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        'user-123',
+      );
+
+      // First call: fetch the session
+      mockSingle.mockResolvedValueOnce({
+        data: {
+          id: sessionId,
+          user_id: 'user-123',
+          created_at: '2026-06-15T00:00:00Z',
+          ended_at: null,
+        },
+        error: null,
+      });
+
+      // Second call: update the session
+      mockSingle.mockResolvedValueOnce({
+        data: {
+          id: sessionId,
+          user_id: 'user-123',
+          created_at: '2026-06-15T00:00:00Z',
+          ended_at: '2026-06-15T01:00:00Z',
+        },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/end`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.id).toBe(sessionId);
+      expect(body.ended_at).toBe('2026-06-15T01:00:00Z');
+
+      expect(mockUpdate).toHaveBeenCalled();
+      expect(mockEq).toHaveBeenCalledWith('id', sessionId);
+    });
+
+    it('is idempotent — returns already-ended session without updating', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        'user-123',
+      );
+
+      mockSingle.mockResolvedValueOnce({
+        data: {
+          id: sessionId,
+          user_id: 'user-123',
+          created_at: '2026-06-15T00:00:00Z',
+          ended_at: '2026-06-15T01:00:00Z',
+        },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/sessions/${sessionId}/end`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: 'Bearer valid.jwt.token' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.id).toBe(sessionId);
+      expect(body.ended_at).toBe('2026-06-15T01:00:00Z');
+
+      // Update should not have been called
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
   });
 
