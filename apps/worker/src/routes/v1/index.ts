@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../../lib/supabase';
-import { getSignedMediaUrl } from '../../lib/r2';
+import { getSignedMediaUrl, getSignedUploadUrl } from '../../lib/r2';
 import { verifySupabaseJwt } from '../../lib/jwks';
 import type { Env } from '../../types';
 
@@ -227,6 +227,45 @@ v1.post('/attempts/:id/submit', async (c) => {
   });
 
   return c.json(updated);
+});
+
+// POST /v1/recordings/upload-url — generate R2 upload Signed URL
+v1.post('/recordings/upload-url', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  let body: { attemptId?: string };
+  try {
+    body = await c.req.json<{ attemptId?: string }>();
+  } catch {
+    return c.json({ error: 'attemptId is required' }, 400);
+  }
+
+  if (!body.attemptId) {
+    return c.json({ error: 'attemptId is required' }, 400);
+  }
+
+  const supabase = getSupabase(c.env);
+  const { data: attempt, error: lookupErr } = await supabase
+    .from('practice_attempts')
+    .select('id, user_id')
+    .eq('id', body.attemptId)
+    .single();
+
+  if (lookupErr || !attempt) {
+    return c.json({ error: 'Attempt not found' }, 404);
+  }
+
+  if (attempt.user_id !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const key = `recordings/${userId}/${body.attemptId}.webm`;
+  const uploadUrl = await getSignedUploadUrl(c.env, key, 300);
+
+  return c.json({ uploadUrl, key });
 });
 
 export default v1;

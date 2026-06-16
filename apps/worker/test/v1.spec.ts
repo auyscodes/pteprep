@@ -42,6 +42,9 @@ vi.mock('../src/lib/r2', () => ({
   getSignedMediaUrl: vi.fn().mockResolvedValue(
     'https://signed.example.com/media/test.webm',
   ),
+  getSignedUploadUrl: vi.fn().mockResolvedValue(
+    'https://signed.example.com/upload/recordings/test.webm',
+  ),
 }));
 
 vi.mock('../src/lib/jwks', () => ({
@@ -690,6 +693,149 @@ describe('/v1 routes', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as Record<string, unknown>;
       expect(body.error).toBe('Recording not uploaded');
+    });
+  });
+
+  // ── POST /v1/recordings/upload-url ──────────────────────────────
+  describe('POST /v1/recordings/upload-url', () => {
+    const attemptId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const userId = 'user-123';
+
+    it('returns uploadUrl and key for valid attempt', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { id: attemptId, user_id: userId },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        'http://example.com/v1/recordings/upload-url',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ attemptId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.uploadUrl).toBe('https://signed.example.com/upload/recordings/test.webm');
+      expect(body.key).toBe(`recordings/${userId}/${attemptId}.webm`);
+
+      const { getSignedUploadUrl } = await import('../src/lib/r2');
+      expect(getSignedUploadUrl).toHaveBeenCalledWith(
+        env,
+        `recordings/${userId}/${attemptId}.webm`,
+        300,
+      );
+    });
+
+    it('returns 401 when no valid JWT is provided', async () => {
+      const request = new IncomingRequest(
+        'http://example.com/v1/recordings/upload-url',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attemptId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Authentication required');
+    });
+
+    it('returns 403 when attempt belongs to a different user', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { id: attemptId, user_id: 'other-user' },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        'http://example.com/v1/recordings/upload-url',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ attemptId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Forbidden');
+    });
+
+    it('returns 400 when attemptId is missing from request body', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      const request = new IncomingRequest(
+        'http://example.com/v1/recordings/upload-url',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('attemptId is required');
+    });
+
+    it('returns 404 when attempt does not exist', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'No rows found' },
+      });
+
+      const request = new IncomingRequest(
+        'http://example.com/v1/recordings/upload-url',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ attemptId }),
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Attempt not found');
     });
   });
 

@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Env } from '../types'
 export function getR2Client(env: Env) {
@@ -19,6 +19,19 @@ export async function getSignedMediaUrl(
 ): Promise<string> {
   const client = getR2Client(env)
   const command = new GetObjectCommand({
+    Bucket: env.R2_BUCKET_NAME ?? 'pteprep-media',
+    Key: key,
+  })
+  return getSignedUrl(client, command, { expiresIn: expiresInSeconds })
+}
+
+export async function getSignedUploadUrl(
+  env: Env,
+  key: string,
+  expiresInSeconds = 300
+): Promise<string> {
+  const client = getR2Client(env)
+  const command = new PutObjectCommand({
     Bucket: env.R2_BUCKET_NAME ?? 'pteprep-media',
     Key: key,
   })
