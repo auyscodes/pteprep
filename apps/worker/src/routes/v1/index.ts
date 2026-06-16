@@ -247,6 +247,10 @@ v1.post('/recordings/upload-url', async (c) => {
     return c.json({ error: 'attemptId is required' }, 400);
   }
 
+  if (/[\\/]|\.\./.test(body.attemptId)) {
+    return c.json({ error: 'Invalid attemptId' }, 400);
+  }
+
   const supabase = getSupabase(c.env);
   const { data: attempt, error: lookupErr } = await supabase
     .from('practice_attempts')
