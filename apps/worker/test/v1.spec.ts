@@ -20,6 +20,7 @@ const mockOrder = vi.fn().mockReturnThis();
 const mockRange = vi.fn().mockReturnThis();
 const mockSingle = vi.fn();
 const mockInsert = vi.fn().mockReturnThis();
+const mockUpdate = vi.fn().mockReturnThis();
 
 const mockFrom = vi.fn(() => ({
   select: mockSelect,
@@ -28,7 +29,9 @@ const mockFrom = vi.fn(() => ({
   order: mockOrder,
   range: mockRange,
   insert: mockInsert,
+  update: mockUpdate,
   single: mockSingle,
+  then: (resolve: (value: unknown) => void) => resolve({ data: null, error: null }),
 }));
 
 vi.mock('../src/lib/supabase', () => ({
@@ -517,6 +520,261 @@ describe('/v1 routes', () => {
       expect(response.status).toBe(404);
       const body = (await response.json()) as Record<string, unknown>;
       expect(body.error).toBe('Session not found');
+    });
+  });
+
+  // ── POST /v1/attempts/:id/submit ─────────────────────────────────
+  describe('POST /v1/attempts/:id/submit', () => {
+    const attemptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const questionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const userId = 'user-123';
+
+    const attemptFixture = {
+      id: attemptId,
+      session_id: sessionId,
+      question_id: questionId,
+      user_id: userId,
+      question_type: 'read_aloud',
+      status: 'pending',
+      recording_url: 'recordings/user-123/dddd.webm',
+      duration_ms: null,
+      score: null,
+      error_detail: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    it('submits attempt, enqueues scoring message, returns 200', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      const sendSpy = vi.spyOn(env.SCORING_QUEUE, 'send').mockResolvedValue(undefined);
+
+      mockSingle
+        .mockResolvedValueOnce({ data: attemptFixture, error: null })
+        .mockResolvedValueOnce({
+          data: { ...attemptFixture, status: 'uploaded' },
+          error: null,
+        });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.status).toBe('uploaded');
+      expect(body.id).toBe(attemptId);
+
+      // Verify queue message was sent
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const sentMessage = sendSpy.mock.calls[0][0];
+      expect(sentMessage).toMatchObject({
+        attemptId,
+        recordingUrl: attemptFixture.recording_url,
+        questionType: 'read_aloud',
+        version: 1,
+      });
+
+      // Verify update was called with status='uploaded'
+      expect(mockUpdate).toHaveBeenCalledWith({ status: 'uploaded' });
+    });
+
+    it('returns 401 when no valid JWT is provided', async () => {
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}/submit`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Authentication required');
+    });
+
+    it('returns 403 when attempt belongs to a different user', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { ...attemptFixture, user_id: 'other-user' },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Forbidden');
+    });
+
+    it('returns 404 when attempt does not exist', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'No rows found' },
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Attempt not found');
+    });
+
+    it('returns 400 when recording_url is null', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { ...attemptFixture, recording_url: null },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        `http://example.com/v1/attempts/${attemptId}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Recording not uploaded');
+    });
+  });
+
+  // ── Queue handler ───────────────────────────────────────────────
+  describe('queue handler', () => {
+    const attemptId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+
+    function createMessage(body: unknown) {
+      const ack = vi.fn();
+      const retry = vi.fn();
+      return {
+        body,
+        id: attemptId,
+        timestamp: new Date(),
+        attempts: 1,
+        ack,
+        retry,
+      };
+    }
+
+    it('scores attempt and sets status to completed on success', async () => {
+      const batch = {
+        messages: [
+          createMessage({
+            attemptId,
+            recordingUrl: 'recordings/user/rec.webm',
+            questionType: 'read_aloud',
+            version: 1,
+          }),
+        ],
+        queue: 'pteprep-scoring-queue',
+        retryAll: vi.fn(),
+      };
+
+      const ctx = createExecutionContext();
+      await worker.queue(batch, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      // Verify update was called with completed status and score
+      expect(mockUpdate).toHaveBeenCalledWith({
+        status: 'completed',
+        score: { fluency: 75, pronunciation: 72, content: 80 },
+      });
+      expect(mockEq).toHaveBeenCalledWith('id', attemptId);
+
+      // Verify message was acknowledged
+      expect(batch.messages[0].ack).toHaveBeenCalled();
+      expect(batch.messages[0].retry).not.toHaveBeenCalled();
+    });
+
+    it('sets status to failed on supabase error', async () => {
+      // Make the first update chain reject
+      mockUpdate.mockReturnValueOnce({
+        then: (_resolve: unknown, reject: (err: Error) => void) => {
+          reject(new Error('connection refused'));
+          return { catch: vi.fn() };
+        },
+        eq: mockEq,
+      } as unknown as ReturnType<typeof mockUpdate>);
+
+      const batch = {
+        messages: [
+          createMessage({
+            attemptId,
+            recordingUrl: 'recordings/user/rec.webm',
+            questionType: 'read_aloud',
+            version: 1,
+          }),
+        ],
+        queue: 'pteprep-scoring-queue',
+        retryAll: vi.fn(),
+      };
+
+      const ctx = createExecutionContext();
+      await worker.queue(batch, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      // Verify the failed update was called
+      expect(mockUpdate).toHaveBeenCalledWith({
+        status: 'failed',
+        error_detail: 'connection refused',
+      });
+
+      // Message should still be acked
+      expect(batch.messages[0].ack).toHaveBeenCalled();
     });
   });
 

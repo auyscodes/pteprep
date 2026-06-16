@@ -184,4 +184,56 @@ v1.post('/sessions/:id/attempts', async (c) => {
   return c.json(attempt, 201);
 });
 
+// POST /v1/attempts/:id/submit — mark uploaded and enqueue for scoring
+v1.post('/attempts/:id/submit', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const attemptId = c.req.param('id');
+  const supabase = getSupabase(c.env);
+
+  // Look up attempt
+  const { data: attempt, error: lookupErr } = await supabase
+    .from('practice_attempts')
+    .select('id, session_id, question_id, user_id, question_type, status, recording_url')
+    .eq('id', attemptId)
+    .single();
+
+  if (lookupErr || !attempt) {
+    return c.json({ error: 'Attempt not found' }, 404);
+  }
+
+  if (attempt.user_id !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  if (!attempt.recording_url) {
+    return c.json({ error: 'Recording not uploaded' }, 400);
+  }
+
+  // Update status to uploaded
+  const { data: updated, error: updateErr } = await supabase
+    .from('practice_attempts')
+    .update({ status: 'uploaded' })
+    .eq('id', attemptId)
+    .select('id, status, session_id, question_id, recording_url')
+    .single();
+
+  if (updateErr || !updated) {
+    return c.json({ error: 'Failed to submit attempt' }, 500);
+  }
+
+  // Enqueue scoring message
+  await c.env.SCORING_QUEUE.send({
+    attemptId,
+    recordingUrl: attempt.recording_url,
+    questionType: attempt.question_type,
+    version: 1,
+  });
+
+  return c.json(updated);
+});
+
 export default v1;
