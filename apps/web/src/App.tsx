@@ -1,6 +1,8 @@
 import { useAuth } from "./lib/AuthContext";
 import { SignInForm } from "./components/SignInForm";
 import { UserBadge } from "./components/UserBadge";
+import { SessionBar } from "./components/SessionBar";
+import { QuestionBrowser } from "./components/QuestionBrowser";
 import "./App.css";
 
 function App() {
@@ -18,7 +20,8 @@ function App() {
     <div>
       <UserBadge />
       <h1>PTE Prep</h1>
-      <p>Welcome to the Read Aloud Player</p>
+      <SessionBar />
+      <QuestionBrowser />
     </div>
   );
 }
