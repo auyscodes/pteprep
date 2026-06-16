@@ -115,6 +115,13 @@ The reviewer **must** check every diff against each item below and flag any viol
 
 ---
 
+## Sandbox constraints
+
+- Never run `wrangler types` — it requires a Cloudflare API token
+  that is not available in the sandbox. Update `src/types.ts` manually
+  when adding new bindings.
+- Never run `wrangler deploy` or `wrangler dev` inside the sandbox.
+
 ## Reviewer Checklist
 
 Before approving any branch, the reviewer must confirm:

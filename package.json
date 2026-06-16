@@ -12,11 +12,14 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "prepare": "husky"
+    "prepare": "husky",
+    "sandcastle": "npx tsx .sandcastle/main.mts"
   },
   "devDependencies": {
+    "@ai-hero/sandcastle": "^0.8.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
-    "prettier": "^3.8.4"
+    "prettier": "^3.8.4",
+    "zod": "^4.4.3"
   }
 }
