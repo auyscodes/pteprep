@@ -109,6 +109,27 @@ v1.get('/questions/:id', async (c) => {
   return c.json(question);
 });
 
+// POST /v1/sessions — create a new practice session
+v1.post('/sessions', async (c) => {
+  const userId = c.get('userId');
+  if (!userId) {
+    return c.json({ error: 'Authentication required' }, 401);
+  }
+
+  const supabase = getSupabase(c.env);
+  const { data: session, error: insertErr } = await supabase
+    .from('practice_sessions')
+    .insert({ user_id: userId })
+    .select('id, user_id, created_at')
+    .single();
+
+  if (insertErr || !session) {
+    return c.json({ error: 'Failed to create session' }, 500);
+  }
+
+  return c.json(session, 201);
+});
+
 // POST /v1/sessions/:id/attempts — create a new practice attempt
 v1.post('/sessions/:id/attempts', async (c) => {
   const userId = c.get('userId');

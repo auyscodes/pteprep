@@ -275,6 +275,89 @@ describe('/v1 routes', () => {
     });
   });
 
+  // ── POST /v1/sessions ────────────────────────────────────────────
+  describe('POST /v1/sessions', () => {
+    const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const userId = 'user-123';
+
+    it('creates a session and returns 201', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: { id: sessionId, user_id: userId, created_at: '2026-01-01T00:00:00Z' },
+        error: null,
+      });
+
+      const request = new IncomingRequest(
+        'http://example.com/v1/sessions',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(201);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.id).toBe(sessionId);
+      expect(body.user_id).toBe(userId);
+      expect(body.created_at).toBe('2026-01-01T00:00:00Z');
+
+      expect(mockInsert).toHaveBeenCalledWith({ user_id: userId });
+    });
+
+    it('returns 401 when no valid JWT is provided', async () => {
+      const request = new IncomingRequest(
+        'http://example.com/v1/sessions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(401);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Authentication required');
+    });
+
+    it('returns 500 on Supabase insert error', async () => {
+      const { verifySupabaseJwt } = await import('../src/lib/jwks');
+      (verifySupabaseJwt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(userId);
+
+      mockSingle.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'connection refused' },
+      });
+
+      const request = new IncomingRequest(
+        'http://example.com/v1/sessions',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer valid.jwt.token',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const ctx = createExecutionContext();
+      const response = await worker.fetch(request, env, ctx);
+      await waitOnExecutionContext(ctx);
+
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.error).toBe('Failed to create session');
+    });
+  });
+
   // ── POST /v1/sessions/:id/attempts ──────────────────────────────
   describe('POST /v1/sessions/:id/attempts', () => {
     const sessionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
